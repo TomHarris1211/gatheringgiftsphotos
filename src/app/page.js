@@ -15,6 +15,7 @@ export default function StaffUploadPage() {
   const [mediaType, setMediaType] = useState("photo");
   const [items, setItems] = useState([]); // { id, file, url, status }
   const [tags, setTags] = useState([]);
+  const [otherNote, setOtherNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(0);
   const fileInput = useRef(null);
@@ -60,6 +61,11 @@ export default function StaffUploadPage() {
 
     try { localStorage.setItem("gg_name", name.trim()); localStorage.setItem("gg_client", client.trim()); } catch {}
 
+    // Build the final tag list. If "others" is picked and a note is typed,
+    // add the typed value as its own tag so it's searchable in the dashboard.
+    const finalTags = [...tags];
+    if (tags.includes("others") && otherNote.trim()) finalTags.push(otherNote.trim());
+
     setBusy(true);
     setDone(0);
     const clientCode = client.trim().replace(/[^A-Za-z0-9]/g, "").slice(0, 6).toUpperCase();
@@ -98,7 +104,7 @@ export default function StaffUploadPage() {
             publicUrl: sign.publicUrl,
             contentType: item.file.type,
             sizeBytes: item.file.size,
-            tags,
+            tags: finalTags,
           }),
         });
         if (!recRes.ok) {
@@ -130,7 +136,7 @@ export default function StaffUploadPage() {
             <div style={{ fontSize: 40 }}>✅</div>
             <h2 style={{ margin: "8px 0 4px", fontSize: 18 }}>{done} item{done === 1 ? "" : "s"} uploaded</h2>
             <p style={{ color: "#667", margin: 0, fontSize: 14 }}>Thanks, {name.split(" ")[0]}!</p>
-            <button style={S.primary} onClick={() => { setItems([]); setTags([]); setDone(0); }}>
+            <button style={S.primary} onClick={() => { setItems([]); setTags([]); setOtherNote(""); setDone(0); }}>
               Upload more
             </button>
           </div>
@@ -179,7 +185,6 @@ export default function StaffUploadPage() {
               ref={fileInput}
               type="file"
               accept={ACCEPT[mediaType]}
-              capture="environment"
               multiple={mediaType === "photo"}
               onChange={pickFiles}
               style={{ display: "none" }}
@@ -215,6 +220,15 @@ export default function StaffUploadPage() {
                 </button>
               ))}
             </div>
+
+            {tags.includes("others") && (
+              <input
+                style={{ ...S.input, marginTop: 10 }}
+                placeholder="Specify what 'others' is (optional)"
+                value={otherNote}
+                onChange={(e) => setOtherNote(e.target.value)}
+              />
+            )}
 
             <button style={{ ...S.primary, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={uploadAll}>
               {busy ? `Uploading ${done}/${items.length}…` : `Upload ${items.length || ""} item${items.length === 1 ? "" : "s"}`.trim()}

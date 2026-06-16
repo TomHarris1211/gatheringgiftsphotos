@@ -5,6 +5,17 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { TAGS } from "@/lib/tags";
 
+function fmtDate(iso) {
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
 export default function AdminDashboard() {
   const router = useRouter();
   const [media, setMedia] = useState([]);
@@ -43,6 +54,16 @@ export default function AdminDashboard() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [client, uploader, tag, from, to]);
+
+  async function del(id) {
+    if (!confirm("Delete this item permanently? This removes it from storage too.")) return;
+    const res = await fetch("/api/media?id=" + id, { method: "DELETE" });
+    if (res.ok) {
+      setMedia((m) => m.filter((x) => x.id !== id));
+    } else {
+      alert("Could not delete. Please try again.");
+    }
+  }
 
   const filtered = useMemo(() => {
     if (!search.trim()) return media;
@@ -107,21 +128,27 @@ export default function AdminDashboard() {
       ) : (
         <div style={d.grid}>
           {filtered.map((m) => (
-            <a key={m.id} href={m.public_url} target="_blank" rel="noreferrer" style={d.cell}>
+            <div key={m.id} style={d.cell} onClick={() => window.open(m.public_url, "_blank")}>
               {m.media_type === "video" ? (
                 <video src={m.public_url} style={d.cellMedia} muted />
               ) : (
                 <img src={m.public_url} alt="" style={d.cellMedia} loading="lazy" />
               )}
+              <button
+                style={d.delBtn}
+                title="Delete"
+                onClick={(e) => { e.stopPropagation(); del(m.id); }}
+              >🗑</button>
               <div style={d.cellOverlay}>
                 <span style={d.up}>{m.uploader_name}</span>
                 <span style={d.cl}>{m.client_name}</span>
+                <span style={d.date}>{fmtDate(m.created_at)}</span>
                 <div style={d.tagRow}>
                   {m.media_type === "video" && <span style={d.play}>▶</span>}
                   {(m.tags || []).slice(0, 3).map((t) => <span key={t} style={d.tagPill}>{t}</span>)}
                 </div>
               </div>
-            </a>
+            </div>
           ))}
         </div>
       )}
@@ -147,11 +174,13 @@ const d = {
   kpis: { display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10, padding: "14px 16px" },
   kpi: { background: "#f4f6f8", borderRadius: 10, padding: "10px 12px" },
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 10, padding: 16 },
-  cell: { position: "relative", aspectRatio: "1", borderRadius: 10, overflow: "hidden", background: "#eef", textDecoration: "none", display: "block" },
+  cell: { position: "relative", aspectRatio: "1", borderRadius: 10, overflow: "hidden", background: "#eef", cursor: "pointer" },
   cellMedia: { width: "100%", height: "100%", objectFit: "cover" },
-  cellOverlay: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: 8, background: "linear-gradient(to top, rgba(0,0,0,0.55), transparent 55%)" },
+  delBtn: { position: "absolute", top: 6, right: 6, width: 28, height: 28, border: "none", borderRadius: "50%", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 13, cursor: "pointer", zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center" },
+  cellOverlay: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: 8, background: "linear-gradient(to top, rgba(0,0,0,0.6), transparent 55%)", pointerEvents: "none" },
   up: { color: "#fff", fontSize: 11, fontWeight: 600 },
   cl: { color: "#dde", fontSize: 11 },
+  date: { color: "#ccd", fontSize: 10, marginTop: 1 },
   tagRow: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4, alignItems: "center" },
   play: { color: "#fff", fontSize: 11 },
   tagPill: { background: "rgba(255,255,255,0.92)", color: "#0C447C", fontSize: 9, padding: "1px 6px", borderRadius: 8 },
