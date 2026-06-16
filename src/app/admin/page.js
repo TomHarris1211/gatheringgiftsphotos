@@ -8,12 +8,15 @@ import { TAGS } from "@/lib/tags";
 function fmtDate(iso) {
   try {
     return new Date(iso).toLocaleString(undefined, {
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit",
+      day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
     });
-  } catch {
-    return "";
-  }
+  } catch { return ""; }
+}
+
+function fileNameFor(m) {
+  const base = (m.r2_key || "").split("/").pop() || "media";
+  const client = (m.client_name || "client").replace(/[^A-Za-z0-9]+/g, "-");
+  return `${client}_${base}`;
 }
 
 export default function AdminDashboard() {
@@ -28,6 +31,15 @@ export default function AdminDashboard() {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [search, setSearch] = useState("");
+
+  // edit modal state
+  const [editing, setEditing] = useState(null); // media row or null
+  const [eName, setEName] = useState("");
+  const [eClient, setEClient] = useState("");
+  const [eTags, setETags] = useState([]);
+  const [eOther, setEOther] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -49,7 +61,6 @@ export default function AdminDashboard() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -58,11 +69,70 @@ export default function AdminDashboard() {
   async function del(id) {
     if (!confirm("Delete this item permanently? This removes it from storage too.")) return;
     const res = await fetch("/api/media?id=" + id, { method: "DELETE" });
-    if (res.ok) {
-      setMedia((m) => m.filter((x) => x.id !== id));
-    } else {
-      alert("Could not delete. Please try again.");
+    if (res.ok) setMedia((m) => m.filter((x) => x.id !== id));
+    else alert("Could not delete. Please try again.");
+  }
+
+  async function download(m) {
+    try {
+      const res = await fetch(m.public_url);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileNameFor(m);
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      window.open(m.public_url, "_blank");
     }
+  }
+
+  async function downloadAll() {
+    if (!filtered.length) return;
+    if (!confirm(`Download all ${filtered.length} item(s) currently shown?`)) return;
+    setDownloadingAll(true);
+    for (const m of filtered) {
+      await download(m);
+      await new Promise((r) => setTimeout(r, 400)); // small gap so the browser keeps up
+    }
+    setDownloadingAll(false);
+  }
+
+  function openEdit(m) {
+    setEditing(m);
+    setEName(m.uploader_name || "");
+    setEClient(m.client_name || "");
+    const known = (m.tags || []).filter((t) => TAGS.includes(t));
+    const custom = (m.tags || []).filter((t) => !TAGS.includes(t));
+    setETags(known.concat(custom.length ? ["others"] : []));
+    setEOther(custom.join(", "));
+  }
+
+  function toggleETag(t) {
+    setETags((prev) => (prev.includes(t) ? prev.filter((x) => x !== t) : [...prev, t]));
+  }
+
+  async function saveEdit() {
+    if (!editing) return;
+    setSaving(true);
+    const finalTags = eTags.filter((t) => t !== "others");
+    if (eTags.includes("others") && eOther.trim()) {
+      eOther.split(",").map((s) => s.trim()).filter(Boolean).forEach((s) => finalTags.push(s));
+    } else if (eTags.includes("others")) {
+      finalTags.push("others");
+    }
+    const res = await fetch("/api/media?id=" + editing.id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uploaderName: eName, clientName: eClient, tags: finalTags }),
+    });
+    setSaving(false);
+    if (!res.ok) { alert("Could not save changes."); return; }
+    setEditing(null);
+    load();
   }
 
   const filtered = useMemo(() => {
@@ -78,12 +148,7 @@ export default function AdminDashboard() {
 
   const stats = useMemo(() => {
     const videos = filtered.filter((m) => m.media_type === "video").length;
-    return {
-      total: filtered.length,
-      clients: new Set(filtered.map((m) => m.client_id)).size,
-      videos,
-      photos: filtered.length - videos,
-    };
+    return { total: filtered.length, clients: new Set(filtered.map((m) => m.client_id)).size, videos, photos: filtered.length - videos };
   }, [filtered]);
 
   async function signOut() {
@@ -96,7 +161,12 @@ export default function AdminDashboard() {
     <main style={d.wrap}>
       <header style={d.header}>
         <strong style={{ fontSize: 15 }}>📊 Admin dashboard</strong>
-        <button style={d.signout} onClick={signOut}>Sign out</button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button style={d.signout} disabled={downloadingAll || !filtered.length} onClick={downloadAll}>
+            {downloadingAll ? "Downloading…" : `⬇ Download all (${filtered.length})`}
+          </button>
+          <button style={d.signout} onClick={signOut}>Sign out</button>
+        </div>
       </header>
 
       <div style={d.filters}>
@@ -134,11 +204,11 @@ export default function AdminDashboard() {
               ) : (
                 <img src={m.public_url} alt="" style={d.cellMedia} loading="lazy" />
               )}
-              <button
-                style={d.delBtn}
-                title="Delete"
-                onClick={(e) => { e.stopPropagation(); del(m.id); }}
-              >🗑</button>
+              <div style={d.btnRow} onClick={(e) => e.stopPropagation()}>
+                <button style={d.iconBtn} title="Download" onClick={() => download(m)}>⬇</button>
+                <button style={d.iconBtn} title="Edit" onClick={() => openEdit(m)}>✎</button>
+                <button style={d.iconBtn} title="Delete" onClick={() => del(m.id)}>🗑</button>
+              </div>
               <div style={d.cellOverlay}>
                 <span style={d.up}>{m.uploader_name}</span>
                 <span style={d.cl}>{m.client_name}</span>
@@ -150,6 +220,31 @@ export default function AdminDashboard() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {editing && (
+        <div style={d.modalBg} onClick={() => setEditing(null)}>
+          <div style={d.modal} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 12px", fontSize: 16 }}>Edit item</h3>
+            <label style={d.mLabel}>Uploader name</label>
+            <input style={d.mInput} value={eName} onChange={(e) => setEName(e.target.value)} />
+            <label style={d.mLabel}>Company / Client name</label>
+            <input style={d.mInput} value={eClient} onChange={(e) => setEClient(e.target.value)} />
+            <label style={d.mLabel}>Tags</label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+              {TAGS.map((t) => (
+                <button key={t} onClick={() => toggleETag(t)} style={{ ...d.chip, ...(eTags.includes(t) ? d.chipActive : {}) }}>{t}</button>
+              ))}
+            </div>
+            {eTags.includes("others") && (
+              <input style={d.mInput} placeholder="Specify (comma-separated)" value={eOther} onChange={(e) => setEOther(e.target.value)} />
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <button style={d.cancelBtn} onClick={() => setEditing(null)}>Cancel</button>
+              <button style={d.saveBtn} disabled={saving} onClick={saveEdit}>{saving ? "Saving…" : "Save"}</button>
+            </div>
+          </div>
         </div>
       )}
     </main>
@@ -176,7 +271,8 @@ const d = {
   grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 10, padding: 16 },
   cell: { position: "relative", aspectRatio: "1", borderRadius: 10, overflow: "hidden", background: "#eef", cursor: "pointer" },
   cellMedia: { width: "100%", height: "100%", objectFit: "cover" },
-  delBtn: { position: "absolute", top: 6, right: 6, width: 28, height: 28, border: "none", borderRadius: "50%", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 13, cursor: "pointer", zIndex: 2, display: "flex", alignItems: "center", justifyContent: "center" },
+  btnRow: { position: "absolute", top: 6, right: 6, display: "flex", gap: 4, zIndex: 2 },
+  iconBtn: { width: 28, height: 28, border: "none", borderRadius: "50%", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
   cellOverlay: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: 8, background: "linear-gradient(to top, rgba(0,0,0,0.6), transparent 55%)", pointerEvents: "none" },
   up: { color: "#fff", fontSize: 11, fontWeight: 600 },
   cl: { color: "#dde", fontSize: 11 },
@@ -184,4 +280,12 @@ const d = {
   tagRow: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4, alignItems: "center" },
   play: { color: "#fff", fontSize: 11 },
   tagPill: { background: "rgba(255,255,255,0.92)", color: "#0C447C", fontSize: 9, padding: "1px 6px", borderRadius: 8 },
+  modalBg: { position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 16 },
+  modal: { background: "#fff", borderRadius: 14, padding: 20, width: "100%", maxWidth: 380 },
+  mLabel: { display: "block", fontSize: 12, color: "#556", margin: "10px 0 5px", fontWeight: 500 },
+  mInput: { width: "100%", height: 42, border: "1px solid #d8dce2", borderRadius: 9, padding: "0 11px", fontSize: 15, outline: "none" },
+  chip: { border: "1px solid #d8dce2", background: "#fff", color: "#556", borderRadius: 18, padding: "6px 13px", fontSize: 13, cursor: "pointer" },
+  chipActive: { background: "#E6F1FB", borderColor: "#185FA5", color: "#0C447C", fontWeight: 600 },
+  cancelBtn: { flex: 1, height: 44, border: "1px solid #d8dce2", background: "#fff", borderRadius: 9, fontSize: 14, cursor: "pointer" },
+  saveBtn: { flex: 1, height: 44, border: "none", background: "#185FA5", color: "#fff", borderRadius: 9, fontSize: 14, fontWeight: 600, cursor: "pointer" },
 };

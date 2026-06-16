@@ -142,14 +142,6 @@ export default function StaffUploadPage() {
           </div>
         ) : (
           <>
-            <label style={S.label}>Your name</label>
-            <input
-              style={S.input}
-              placeholder="e.g. Tom H"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-
             <label style={S.label}>Company / Client name</label>
             <input
               style={S.input}
@@ -163,6 +155,14 @@ export default function StaffUploadPage() {
                 <option key={c.id} value={c.name} />
               ))}
             </datalist>
+
+            <label style={S.label}>Your name</label>
+            <input
+              style={S.input}
+              placeholder="e.g. Tom H"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
 
             <div style={S.toggle}>
               {["photo", "video"].map((t) => (
