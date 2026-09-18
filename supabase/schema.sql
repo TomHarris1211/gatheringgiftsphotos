@@ -34,11 +34,13 @@ create table if not exists public.media (
   public_url    text not null,            -- CDN/public URL for display
   content_type  text,
   size_bytes    bigint,
+  taken_at      timestamptz,             -- capture date from the photo's EXIF (null if unknown)
   created_at    timestamptz not null default now()
 );
 create index if not exists media_client_idx  on public.media (client_id);
 create index if not exists media_created_idx on public.media (created_at desc);
 create index if not exists media_uploader_idx on public.media (lower(uploader_name));
+create index if not exists media_captured_idx on public.media ((coalesce(taken_at, created_at)) desc);
 
 -- ---------- Media <-> Tags (many-to-many) ----------
 create table if not exists public.media_tags (
@@ -98,6 +100,8 @@ select
        join public.tags t on t.id = mt.tag_id
       where mt.media_id = m.id),
     '{}'
-  ) as tags
+  ) as tags,
+  m.taken_at,
+  coalesce(m.taken_at, m.created_at) as captured_at
 from public.media m
 join public.clients c on c.id = m.client_id;

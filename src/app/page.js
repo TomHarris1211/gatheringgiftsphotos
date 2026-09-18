@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { TAGS } from "@/lib/tags";
+import { readCaptureDate } from "@/lib/exif";
 
 const ACCEPT = {
   photo: "image/jpeg,image/png,image/webp,image/heic,image/heif",
@@ -74,6 +75,11 @@ export default function StaffUploadPage() {
       try {
         setItems((p) => p.map((i) => (i.id === item.id ? { ...i, status: "uploading" } : i)));
 
+        // When the photo was actually taken, read from its EXIF data.
+        // Null for videos and for images that carry no EXIF — the dashboard
+        // falls back to the upload time in that case.
+        const takenAt = await readCaptureDate(item.file);
+
         const signRes = await fetch("/api/upload-url", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -104,6 +110,7 @@ export default function StaffUploadPage() {
             publicUrl: sign.publicUrl,
             contentType: item.file.type,
             sizeBytes: item.file.size,
+            takenAt,
             tags: finalTags,
           }),
         });

@@ -13,6 +13,13 @@ function fmtDate(iso) {
   } catch { return ""; }
 }
 
+// The date that matters is when the photo was taken; fall back to the upload
+// time only when the file carried no capture date.
+function cardDate(m) {
+  if (m.taken_at) return { text: fmtDate(m.taken_at), taken: true };
+  return { text: fmtDate(m.created_at), taken: false };
+}
+
 function fileNameFor(m) {
   const base = (m.r2_key || "").split("/").pop() || "media";
   const client = (m.client_name || "client").replace(/[^A-Za-z0-9]+/g, "-");
@@ -210,13 +217,16 @@ export default function AdminDashboard() {
                 <button style={d.iconBtn} title="Delete" onClick={() => del(m.id)}>🗑</button>
               </div>
               <div style={d.cellOverlay}>
-                <span style={d.up}>{m.uploader_name}</span>
                 <span style={d.cl}>{m.client_name}</span>
-                <span style={d.date}>{fmtDate(m.created_at)}</span>
+                <span style={d.date}>
+                  {cardDate(m).text}
+                  {!cardDate(m).taken && <span style={d.dateNote}> · uploaded</span>}
+                </span>
                 <div style={d.tagRow}>
                   {m.media_type === "video" && <span style={d.play}>▶</span>}
                   {(m.tags || []).slice(0, 3).map((t) => <span key={t} style={d.tagPill}>{t}</span>)}
                 </div>
+                <span style={d.up}>{m.uploader_name}</span>
               </div>
             </div>
           ))}
@@ -274,9 +284,10 @@ const d = {
   btnRow: { position: "absolute", top: 6, right: 6, display: "flex", gap: 4, zIndex: 2 },
   iconBtn: { width: 28, height: 28, border: "none", borderRadius: "50%", background: "rgba(0,0,0,0.55)", color: "#fff", fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" },
   cellOverlay: { position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: 8, background: "linear-gradient(to top, rgba(0,0,0,0.6), transparent 55%)", pointerEvents: "none" },
-  up: { color: "#fff", fontSize: 11, fontWeight: 600 },
-  cl: { color: "#dde", fontSize: 11 },
-  date: { color: "#ccd", fontSize: 10, marginTop: 1 },
+  cl: { color: "#fff", fontSize: 12, fontWeight: 700, lineHeight: 1.25 },
+  date: { color: "#e4e8ef", fontSize: 11, marginTop: 2 },
+  dateNote: { color: "#aab2bf", fontSize: 9, fontStyle: "italic" },
+  up: { color: "#b9c1cd", fontSize: 10, fontWeight: 400, marginTop: 4 },
   tagRow: { display: "flex", flexWrap: "wrap", gap: 4, marginTop: 4, alignItems: "center" },
   play: { color: "#fff", fontSize: 11 },
   tagPill: { background: "rgba(255,255,255,0.92)", color: "#0C447C", fontSize: 9, padding: "1px 6px", borderRadius: 8 },

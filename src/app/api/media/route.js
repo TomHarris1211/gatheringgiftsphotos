@@ -24,6 +24,17 @@ async function linkTags(db, mediaId, tags) {
   }
 }
 
+// Capture dates are read in the browser, so treat them as untrusted input:
+// only store a timestamp that parses and is plausible.
+function safeTakenAt(value) {
+  if (!value) return null;
+  const t = new Date(value);
+  if (Number.isNaN(t.getTime())) return null;
+  if (t.getFullYear() < 1990) return null;
+  if (t.getTime() > Date.now() + 24 * 60 * 60 * 1000) return null;
+  return t.toISOString();
+}
+
 async function requireAdmin() {
   const supa = await supabaseServer();
   const { data: { user } } = await supa.auth.getUser();
@@ -38,7 +49,7 @@ export async function POST(req) {
     const body = await req.json();
     const {
       clientName, uploaderName, mediaType,
-      r2Key, publicUrl, contentType, sizeBytes, tags = [],
+      r2Key, publicUrl, contentType, sizeBytes, takenAt, tags = [],
     } = body;
 
     if (!clientName || !uploaderName || !r2Key || !publicUrl) {
@@ -69,6 +80,7 @@ export async function POST(req) {
         public_url: publicUrl,
         content_type: contentType || null,
         size_bytes: sizeBytes || null,
+        taken_at: safeTakenAt(takenAt),
       })
       .select("id")
       .single();
@@ -95,12 +107,12 @@ export async function GET(req) {
   const to = searchParams.get("to");
 
   const db = supabaseAdmin();
-  let q = db.from("media_view").select("*").order("created_at", { ascending: false });
+  let q = db.from("media_view").select("*").order("captured_at", { ascending: false });
   if (client) q = q.eq("client_id", client);
   if (uploader) q = q.ilike("uploader_name", uploader);
   if (tag) q = q.contains("tags", [tag]);
-  if (from) q = q.gte("created_at", from);
-  if (to) q = q.lte("created_at", to);
+  if (from) q = q.gte("captured_at", from);
+  if (to) q = q.lte("captured_at", to);
 
   const { data, error } = await q.limit(500);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
